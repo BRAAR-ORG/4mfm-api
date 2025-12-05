@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>4MFM Radio</title>
+  <style>
+    body { margin: 0; padding: 0; overflow: hidden; font-family: Arial, sans-serif; color: #fff; }
+
+    /* Vídeos de fundo */
+    .bg-video-container::after {
+      content: "";
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.22);
+      backdrop-filter: blur(4px) saturate(150%);
+      z-index: 2;
+      pointer-events: none;
+    }
+    .bg-video-container {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      overflow: hidden;
+      z-index: -1;
+    }
+
+    .bg-video-container video {
+      position: absolute;
+      top: 50%; left: 50%;
+      min-width: 100%; min-height: 100%;
+      transform: translate(-50%, -50%);
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 1.5s ease;
+    }
+    video.active { opacity: 1; }
+
+    /* Modal */
+    #permissionModal {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999;
+    }
+    .modal-box {
+      background: #1a1a1a; padding: 25px; border-radius: 12px;
+      text-align: center; width: 90%; max-width: 380px;
+      box-shadow: 0 0 20px rgba(0,255,255,0.2);
+    }
+    button {
+      margin-top: 18px; padding: 12px 22px;
+      border: none; border-radius: 8px; cursor: pointer;
+      font-size: 16px; font-weight: bold;
+      background: linear-gradient(90deg, #00eaff, #006bff);
+      color: #fff;
+    }
+
+    /* Player futurista */
+    #radioPlayer {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.55);
+      padding: 20px 35px;
+      border-radius: 18px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 0 20px rgba(0,255,255,0.4);
+      z-index: 5;
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      border: 1px solid rgba(0,255,255,0.4);
+      animation: float 4s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0% { transform: translateX(-50%) translateY(0); }
+      50% { transform: translateX(-50%) translateY(-6px); }
+      100% { transform: translateX(-50%) translateY(0); }
+    }
+
+    .eq-bar {
+      width: 4px;
+      height: 18px;
+      background: cyan;
+      margin: 0 2px;
+      display: inline-block;
+      animation: equalizer 0.6s infinite alternate;
+    }
+
+    @keyframes equalizer {
+      from { height: 4px; opacity: 0.5; }
+      to { height: 22px; opacity: 1; }
+    }
+  .live-anim {
+    color: #ff4d4d;
+    animation: pulseText 1s infinite;
+  }
+  @keyframes pulseText {
+    0% { transform: scale(1); opacity: 0.8; }
+    50% { transform: scale(1.15); opacity: 1; }
+    100% { transform: scale(1); opacity: 0.8; }
+  }
+
+  #status-banner {
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.7);
+    padding: 10px 20px;
+    border-radius: 12px;
+    color: cyan;
+    font-weight: bold;
+    display: none;
+    z-index: 10000;
+  }
+
+  </style>
+</head>
+<body>
+
+<div id="status-banner"></div>
+
+<!-- Fundo com 3 vídeos -->
+<div class="bg-video-container">
+  <video src="video1.mp4" muted loop autoplay></video>
+  <video src="video2.mp4" muted loop autoplay></video>
+  <video src="video3.mp4" muted loop autoplay></video>
+</div>
+
+<!-- Modal de permissão -->
+<div id="permissionModal">
+  <div class="modal-box">
+    <h2>Reprodução bloqueada</h2>
+    <p>Para ouvir a rádio, clique no botão abaixo.</p>
+    <button id="allowBtn">Permitir reprodução</button>
+  </div>
+</div>
+
+<audio id="player" preload="none" volume="1.0"></audio>
+
+<!-- Player Overlay atualizado -->
+<div id="radioPlayer">
+  <div style="font-size:22px; font-weight:900; margin-bottom:10px; color:cyan;">4MFM - AO VIVO</div>
+  <div id="songName" class="live-anim">Carregando...</div>
+
+  <div style="margin-top:12px;">
+    <div class="eq-bar" style="animation-delay:0s"></div>
+    <div class="eq-bar" style="animation-delay:0.1s"></div>
+    <div class="eq-bar" style="animation-delay:0.2s"></div>
+    <div class="eq-bar" style="animation-delay:0.15s"></div>
+    <div class="eq-bar" style="animation-delay:0.05s"></div>
+  </div>
+</div>
+
+<script>
+  const allowBtn = document.getElementById('allowBtn');
+  const player = document.getElementById('player');
+player.volume = 1.0;
+  const modal = document.getElementById('permissionModal');
+  const videos = document.querySelectorAll('.bg-video-container video');
+  let currentVideo = 0;
+  let playlist = [];
+  let playCount = 0;
+  let announcers = [];
+
+  videos[0].classList.add('active');
+
+  function rotateVideos() {
+    videos[currentVideo].classList.remove('active');
+    currentVideo = (currentVideo + 1) % videos.length;
+    videos[currentVideo].classList.add('active');
+  }
+
+  setInterval(rotateVideos, 15000);
+
+  async function loadPlaylist() {
+    const api = "https://api.github.com/repos/BRAAR-ORG/4mfm-api/releases/tags/songs";
+    const res = await fetch(api);
+    const data = await res.json();
+
+    const assets = data.assets || [];
+    const audioFiles = assets.filter(a => a.name.endsWith('.mp3'));
+    playlist = audioFiles;
+
+    if (audioFiles.length === 0) return;
+
+    const randomIndex = Math.floor(Math.random() * audioFiles.length);
+    player.src = audioFiles[randomIndex].browser_download_url;
+    document.getElementById('songName').textContent = audioFiles[randomIndex].name.replace('.mp3', '').replace(/[.-]/g, ' ');
+  }
+
+  async function loadAnnouncers() {
+    const api = "https://api.github.com/repos/BRAAR-ORG/4mfm-api/releases/tags/announcer";
+    const res = await fetch(api);
+    const data = await res.json();
+    const assets = data.assets || [];
+    announcers = assets.filter(a => a.name.endsWith('.mp3'));
+  }
+
+  async function playNext() {
+    playCount++;
+    const songNameEl = document.getElementById('songName');
+
+    if ((playCount % 6 === 0 || playCount % 12 === 0) && announcers.length > 0) {
+      const idx = Math.floor(Math.random() * announcers.length);
+      const a = announcers[idx];
+      player.src = a.browser_download_url;
+      songNameEl.textContent = "Kiara no Ar";
+      songNameEl.classList.add('live-anim');
+      return;
+    }
+
+    if (playlist.length > 0) {
+      const idx = Math.floor(Math.random() * playlist.length);
+      player.src = playlist[idx].browser_download_url;
+      songNameEl.textContent = playlist[idx].name.replace('.mp3', '').replace(/[.-]/g, ' ');
+      songNameEl.classList.add('live-anim');
+    }
+  }
+
+  allowBtn.addEventListener('click', async () => {
+    localStorage.setItem('audio_permission', 'granted');
+    modal.style.display = 'none';
+
+    try {
+      if (player.src === "") await loadPlaylist();
+      await player.play();
+    } catch(err) {}
+  });
+
+  const statusBanner = document.getElementById('status-banner');
+  
+  window.onload = async () => {
+    await loadAnnouncers();
+    const savedSrc = localStorage.getItem('last_src');
+    const savedTime = parseFloat(localStorage.getItem('last_time') || '0');
+    const permission = localStorage.getItem('audio_permission');
+
+    if (savedSrc) {
+      statusBanner.textContent = 'Retomando reprodução…';
+      statusBanner.style.display = 'block';
+      try {
+        const test = await fetch(savedSrc, { method: 'HEAD' });
+        if (!test.ok) throw new Error('Arquivo indisponível');
+
+        player.src = savedSrc;
+        await player.load();
+        player.preload = 'auto';
+        player.addEventListener('canplay', () => {
+          player.currentTime = savedTime || 0;
+          player.play().catch(()=>{});
+          statusBanner.style.display = 'none';
+        }, { once: true });
+      } catch(e) {
+        await loadPlaylist();
+        player.play().catch(()=>{});
+        setTimeout(()=> statusBanner.style.display='none', 2000);
+      }
+    } else if (permission === 'granted') {
+      modal.style.display = 'none';
+      await loadPlaylist();
+      player.play().catch(()=>{});
+    }
+  };
+
+  setInterval(() => {
+    if (!player.src) return;
+    localStorage.setItem('last_src', player.src);
+    localStorage.setItem('last_time', player.currentTime);
+  }, 2000);
+
+  player.addEventListener('ended', async () => {
+    await playNext();
+    player.play().catch(()=>{});
+  });
+</script>
+
+</body>
+</html>
